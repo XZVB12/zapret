@@ -181,11 +181,21 @@ static packet_process_result processPacketData(uint8_t *data_pkt, size_t len_pkt
 		iphdr = (struct iphdr *) data;
 		proto = iphdr->protocol;
 		proto_skip_ipv4(&data, &len);
+		if (params.debug)
+		{
+			printf("IP4: ");
+			print_iphdr(iphdr);
+		}
 	}
 	else if (proto_check_ipv6(data, len))
 	{
 		ip6hdr = (struct ip6_hdr *) data;
 		proto_skip_ipv6(&data, &len, &proto);
+		if (params.debug)
+		{
+			printf("IP6: ");
+			print_ip6hdr(ip6hdr, proto);
+		}
 	}
 	else
 	{
@@ -198,7 +208,13 @@ static packet_process_result processPacketData(uint8_t *data_pkt, size_t len_pkt
 		tcphdr = (struct tcphdr *) data;
 		len_tcp = len;
 		proto_skip_tcp(&data, &len);
-		//DLOG("got TCP packet. payload_len=%d\n",len)
+
+		if (params.debug)
+		{
+			printf(" ");
+			print_tcphdr(tcphdr);
+			printf("\n");
+		}
 
 		if (modify_tcp_packet(data, len, tcphdr))
 			res = modify;
@@ -207,6 +223,11 @@ static packet_process_result processPacketData(uint8_t *data_pkt, size_t len_pkt
 		res = (res2==pass && res==modify) ? modify : res2;
 		if (res==modify) tcp_fix_checksum(tcphdr,len_tcp,iphdr,ip6hdr);
 	}
+	else
+	{
+		if (params.debug) printf("\n");
+	}
+
 	return res;
 }
 
@@ -252,6 +273,7 @@ static void exithelp()
 		" --hostcase\t\t\t\t; change Host: => host:\n"
 		" --hostspell\t\t\t\t; exact spelling of \"Host\" header. must be 4 chars. default is \"host\"\n"
 		" --hostnospace\t\t\t\t; remove space after Host: and add it to User-Agent: to preserve packet size\n"
+		" --domcase\t\t\t\t; mix domain case : Host: TeSt.cOm\n"
 		" --dpi-desync[=<mode>]\t\t\t; try to desync dpi state. modes : fake rst rstack disorder disorder2 split split2\n"
 		" --dpi-desync-fwmark=<int|0xHEX>\t; override fwmark for desync packet. default = 0x%08X\n"
 		" --dpi-desync-ttl=<int>\t\t\t; set ttl for desync packet\n"
@@ -324,16 +346,17 @@ int main(int argc, char **argv)
 		{"hostcase",no_argument,0,0},		// optidx=7
 		{"hostspell",required_argument,0,0},	// optidx=8
 		{"hostnospace",no_argument,0,0},	// optidx=9
-		{"dpi-desync",optional_argument,0,0},		// optidx=10
-		{"dpi-desync-fwmark",required_argument,0,0},	// optidx=11
-		{"dpi-desync-ttl",required_argument,0,0},	// optidx=12
-		{"dpi-desync-fooling",required_argument,0,0},	// optidx=13
-		{"dpi-desync-retrans",optional_argument,0,0},	// optidx=14
-		{"dpi-desync-repeats",required_argument,0,0},	// optidx=15
-		{"dpi-desync-skip-nosni",optional_argument,0,0},// optidx=16
-		{"dpi-desync-split-pos",required_argument,0,0},// optidx=17
-		{"dpi-desync-any-protocol",optional_argument,0,0},// optidx=18
-		{"hostlist",required_argument,0,0},		// optidx=19
+		{"domcase",no_argument,0,0 },		// optidx=10
+		{"dpi-desync",optional_argument,0,0},		// optidx=11
+		{"dpi-desync-fwmark",required_argument,0,0},	// optidx=12
+		{"dpi-desync-ttl",required_argument,0,0},	// optidx=13
+		{"dpi-desync-fooling",required_argument,0,0},	// optidx=14
+		{"dpi-desync-retrans",optional_argument,0,0},	// optidx=15
+		{"dpi-desync-repeats",required_argument,0,0},	// optidx=16
+		{"dpi-desync-skip-nosni",optional_argument,0,0},// optidx=17
+		{"dpi-desync-split-pos",required_argument,0,0},// optidx=18
+		{"dpi-desync-any-protocol",optional_argument,0,0},// optidx=19
+		{"hostlist",required_argument,0,0},		// optidx=20
 		{NULL,0,NULL,0}
 	};
 	if (argc < 2) exithelp();
@@ -403,7 +426,10 @@ int main(int argc, char **argv)
 		case 9: /* hostnospace */
 			params.hostnospace = true;
 			break;
-		case 10: /* dpi-desync */
+		case 10: /* domcase */
+			params.domcase = true;
+			break;
+		case 11: /* dpi-desync */
 			if (!optarg || !strcmp(optarg,"fake"))
 				params.desync_mode = DESYNC_FAKE;
 			else if (!strcmp(optarg,"rst"))
@@ -424,7 +450,7 @@ int main(int argc, char **argv)
 				exit_clean(1);
 			}
 			break;
-		case 11: /* dpi-desync */
+		case 12: /* dpi-desync */
 			params.desync_fwmark = 0;
 			if (!sscanf(optarg, "0x%X", &params.desync_fwmark)) sscanf(optarg, "%u", &params.desync_fwmark);
 			if (!params.desync_fwmark)
@@ -433,10 +459,10 @@ int main(int argc, char **argv)
 				exit_clean(1);
 			}
 			break;
-		case 12: /* dpi-desync-ttl */
+		case 13: /* dpi-desync-ttl */
 			params.desync_ttl = (uint8_t)atoi(optarg);
 			break;
-		case 13: /* dpi-desync-fooling */
+		case 14: /* dpi-desync-fooling */
 			{
 				char *e,*p = optarg;
 				while (p)
@@ -460,10 +486,10 @@ int main(int argc, char **argv)
 				}
 			}
 			break;
-		case 14: /* dpi-desync-retrans */
+		case 15: /* dpi-desync-retrans */
 			params.desync_retrans = !optarg || atoi(optarg);
 			break;
-		case 15: /* dpi-desync-repeats */
+		case 16: /* dpi-desync-repeats */
 			params.desync_repeats = atoi(optarg);
 			if (params.desync_repeats<=0 || params.desync_repeats>20)
 			{
@@ -471,10 +497,10 @@ int main(int argc, char **argv)
 				exit_clean(1);
 			}
 			break;
-		case 16: /* dpi-desync-skip-nosni */
+		case 17: /* dpi-desync-skip-nosni */
 			params.desync_skip_nosni = !optarg || atoi(optarg);
 			break;
-		case 17: /* dpi-desync-split-pos */
+		case 18: /* dpi-desync-split-pos */
 			params.desync_split_pos = atoi(optarg);
 			if (params.desync_split_pos<1 || params.desync_split_pos>DPI_DESYNC_MAX_FAKE_LEN)
 			{
@@ -482,10 +508,10 @@ int main(int argc, char **argv)
 				exit_clean(1);
 			}
 			break;
-		case 18: /* dpi-desync-any-protocol */
+		case 19: /* dpi-desync-any-protocol */
 			params.desync_any_proto = !optarg || atoi(optarg);
 			break;
-		case 19: /* hostlist */
+		case 20: /* hostlist */
 			if (!LoadHostList(&params.hostlist, optarg))
 				exit_clean(1);
 			strncpy(params.hostfile,optarg,sizeof(params.hostfile));
@@ -517,21 +543,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "error during nfq_unbind_pf()\n");
 		goto exiterr;
 	}
-	printf("unbinding existing nf_queue handler for AF_INET6 (if any)\n");
-	if (nfq_unbind_pf(h, AF_INET6) < 0) {
-		fprintf(stderr, "error during nfq_unbind_pf()\n");
-		// ignore error. system can be without ipv6
-	}
 
 	printf("binding nfnetlink_queue as nf_queue handler for AF_INET\n");
 	if (nfq_bind_pf(h, AF_INET) < 0) {
 		fprintf(stderr, "error during nfq_bind_pf()\n");
 		goto exiterr;
-	}
-	printf("binding nfnetlink_queue as nf_queue handler for AF_INET6\n");
-	if (nfq_bind_pf(h, AF_INET6) < 0) {
-		fprintf(stderr, "error during nfq_bind_pf()\n");
-		// ignore error. system can be without ipv6
 	}
 
 	printf("binding this socket to queue '%u'\n", params.qnum);

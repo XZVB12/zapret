@@ -217,7 +217,7 @@ write_config_var()
 select_mode()
 {
 	echo select MODE :
-	ask_list MODE "tpws_ipset tpws_ipset_https tpws_all tpws_all_https tpws_hostlist nfqws_all_desync nfqws_ipset_desync nfqws_hostlist_desync ipset custom" tpws_ipset_https && write_config_var MODE
+	ask_list MODE "tpws_ipset tpws_ipset_https tpws_all tpws_all_https tpws_hostlist tpws_hostlist_https nfqws_all_desync nfqws_ipset_desync nfqws_hostlist_desync ipset custom" tpws_ipset_https && write_config_var MODE
 }
 select_getlist()
 {
@@ -570,6 +570,12 @@ check_packages_openwrt()
 	done
 }
 
+is_linked_to_busybox()
+{
+	local P="$(readlink /bin/$1)"
+	[ "${P%busybox*}" != "$P" ] && [ ! -x /usr/bin/$1 ]
+}
+
 check_prerequisites_openwrt()
 {
 	echo \* checking prerequisites
@@ -591,7 +597,7 @@ check_prerequisites_openwrt()
 		}
 	fi
 	
-	[ -x "/usr/bin/gzip" ] || {
+	is_linked_to_busybox gzip && {
 		echo your system uses default busybox gzip. its several times slower than gnu gzip.
 		echo ip/host list scripts will run much faster with gnu gzip
 		echo installer can install gnu gzip but it requires about 100 Kb space
@@ -603,7 +609,7 @@ check_prerequisites_openwrt()
 			opkg install gzip
 		fi
 	}
-	[ -x "/usr/bin/grep" ] || {
+	is_linked_to_busybox grep && {
 		echo your system uses default busybox grep. its damn infinite slow with -f option
 		echo get_combined.sh will be severely impacted
 		echo installer can install gnu grep but it requires about 0.5 Mb space

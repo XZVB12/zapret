@@ -80,7 +80,7 @@ iptables -t mangle -I POSTROUTING -o <external_interface> -p tcp --dport 80 -m s
 Some DPIs catch only the first http request, ignoring subsequent requests in a keep-alive session.
 Then we can reduce CPU load, refusing to process unnecessary packets.
 
-iptables -t mangle -I POSTROUTING -o <внешний_интерфейс> -p tcp --dport 80 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 2:4 -m set --match-set zapret dst -j NFQUEUE --queue-num 200 --queue-bypass
+iptables -t mangle -I POSTROUTING -o <external_interface> -p tcp --dport 80 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 2:4 -m set --match-set zapret dst -j NFQUEUE --queue-num 200 --queue-bypass
 
 
 ip6tables
@@ -89,7 +89,7 @@ ip6tables
 ip6tables work almost exactly the same way as ipv4, but there are a number of important nuances.
 In DNAT, you should take the address --to in square brackets. For example :
 
- iptables -t nat -I OUTPUT -p tcp --dport 80 -m owner ! --uid-owner tpws -j DNAT --to [::1]:1188
+ ip6tables -t nat -I OUTPUT -o <external_interface> -p tcp --dport 80 -m owner ! --uid-owner tpws -j DNAT --to [::1]:1188
 
 The route_localnet parameter does not exist for ipv6.
 DNAT to localhost (:: 1) is possible only in the OUTPUT chain.
@@ -123,6 +123,7 @@ It takes the following parameters:
  --hostcase           			; change Host: => host:
  --hostspell=HoSt      			; exact spelling of the "Host" header. must be 4 chars. default is "host"
  --hostnospace         			; remove space after Host: and add it to User-Agent: to preserve packet size
+ --domcase				; mix domain case after Host: like this : TeSt.cOm
  --daemon              			; daemonize
  --pidfile=<filename>  			; write pid to file
  --user=<username>      		; drop root privs
@@ -184,8 +185,8 @@ algorithms are used.
 Mode 'disorder2' disables sending of fake segments.
 
 Split mode is very similar to disorder but without segment reordering :
-1. 1st segment
-2. fake 1st segment, data filled with zeroes
+1. fake 1st segment, data filled with zeroes
+2. 1st segment
 3. fake 1st segment, data filled with zeroes (2nd copy)
 4. 2nd segment
 Mode 'split2' disables sending of fake segments. It can be used as a faster alternative to --wsize.
@@ -210,13 +211,13 @@ Subdomains are applied automatically. gzip lists are supported.
 
 iptables for performing the attack on the first packet :
 
-iptables -t mangle -I POSTROUTING -p tcp -m multiport --dports 80,443 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 2:4 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
+iptables -t mangle -I POSTROUTING -o <external_interface> -p tcp -m multiport --dports 80,443 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 2:4 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
 
 This is good if DPI does not track all requests in http keep-alive session.
 If it does, then pass all outgoing packets for http and only first data packet for https :
 
-iptables -t mangle -I POSTROUTING -p tcp --dport 443 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 2:4 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
-iptables -t mangle -I POSTROUTING -p tcp --dport 80 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
+iptables -t mangle -I POSTROUTING -o <external_interface> -p tcp --dport 443 -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 2:4 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
+iptables -t mangle -I POSTROUTING -o <external_interface> -p tcp --dport 80 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
 
 mark is needed to keep away generated packets from NFQUEUE. nfqws sets fwmark when it sends generated packets.
 
@@ -226,7 +227,7 @@ tpws
 tpws is transparent proxy.
 
  --debug=0|1|2			; 0(default)=silent 1=verbose 2=debug
- --bind-addr=<ipv4_addr>|<ipv6_addr>
+ --bind-addr=<v4_addr>|<v6_addr>; for v6 link locals append %interface_name : fe80::1%br-lan
  --bind-iface4=<interface_name> ; bind to the first ipv4 addr of interface
  --bind-iface6=<interface_name> ; bind to the first ipv6 addr of interface
  --bind-linklocal=prefer|force  ; prefer or force ipv6 link local
@@ -246,15 +247,17 @@ tpws is transparent proxy.
 				; its worth to make a reserve with 1.5 multiplier. by default maxfiles is (X*connections)*1.5+16
  --max-orphan-time=<sec>	; if local leg sends something and closes and remote leg is still connecting then cancel connection attempt after N seconds
 
- --hostlist=<filename>          ; only act on host in the list (one host per line, subdomains auto apply)
- --split-http-req=method|host	; split http request at specified logical position
- --split-pos=<numeric_offset>   ; split at specified pos. invalidates split-http-req.
+ --hostlist=<filename>          ; only act on host in the list (one host per line, subdomains auto apply, gzip lists supported)
+ --split-http-req=method|host	; split http request at specified logical position.
+ --split-pos=<numeric_offset>   ; split at specified pos. split-http-req takes precedence over split-pos for http reqs.
+ --split-any-protocol		; split not only http and https
  --hostcase                     ; change Host: => host:
  --hostspell                    ; exact spelling of "Host" header. must be 4 chars. default is "host"
  --hostdot                      ; add "." after Host: name
  --hosttab                      ; add tab after Host: name
  --hostnospace                  ; remove space after Host:
  --hostpad=<bytes>		; add dummy padding headers before Host:
+ --domcase			; mix domain case after Host: like this : TeSt.cOm
  --methodspace                  ; add extra space after method
  --methodeol                    ; add end-of-line before method
  --unixeol                      ; replace 0D0A to 0A
@@ -264,12 +267,17 @@ tpws is transparent proxy.
  --uid=uid[:gid]		; drop root privs
  
 The manipulation parameters can be combined in any way.
-There are exceptions: split-pos replaces split-http-req. hostdot and hosttab are mutually exclusive.
-Only split-pos option works for non-HTTP traffic.
 
-tpws can bind only to one ip or to all at once.
-To bind to all ipv4, specify "0.0.0.0", to all ipv6 - "::". Without parameters, tpws bind to all ipv4 and ipv6.
-The --bind-wait * parameters can help in situations where you need to get IP from the interface, but it is not there yet, it is not raised
+split-http-req takes precedence over split-pos for http reqs.
+split-pos works by default only on http and TLS ClientHello. use --split-any-protocol to act on any packet
+
+tpws can bind to multiple interfaces and IP addresses (up to 32).
+Port number is always the same.
+Parameters --bind-iface* и --bind-addr create new bind.
+Other parameters --bind-* are related to the last bind.
+To bind to all ipv4 specify --bind-addr "0.0.0.0", all ipv6 - "::". --bind-addr="" - mean bind to all ipv4 and ipv6.
+If no binds are specified default bind to all ipv4 and ipv6 addresses is created.
+The --bind-wait* parameters can help in situations where you need to get IP from the interface, but it is not there yet, it is not raised
 or not configured.
 In different systems, ifup events are caught in different ways and do not guarantee that the interface has already received an IP address of a certain type.
 In the general case, there is no single mechanism to hang oneself on an event of the type "link local address appeared on the X interface."
@@ -358,8 +366,10 @@ tpws_ipset_https - use tpws on http and https, targets are filtered by ipset "za
 tpws_all - use tpws on all http
 tpws_all_https - use tpws on all http and https
 tpws_hostlist - same as tpws_all but touch only domains from the hostlist
+tpws_hostlist_https - same as tpws_all_https but touch only domains from the hostlist
 
 ipset - only fill ipset. futher actions depend on your own code
+custom - use custom script to run daemons and fill firewall rules. see example in init.d
 
 Its possible to change manipulation options used by tpws separately for http and https :
 
@@ -466,6 +476,59 @@ supersu : /system/su.d
 
 I haven't checked whether android can kill iptable rules at its own will during wifi connection/disconnection,
 mobile data on/off, ...
+
+How to run tpws on root-less android.
+You can't write to /system, /data, can't run from sd card.
+Selinux prevents running executables in /data/local/tmp from apps.
+Use adb and adb shell.
+mkdir /data/local/tmp/zapret
+adb push tpws /data/local/tmp/zapret
+chmod 755 /data/local/tmp/zapret /data/local/tmp/zapret/tpws
+chcon u:object_r:system_file:s0 /data/local/tmp/zapret/tpws
+Now its possible to run /data/local/tmp/zapret/tpws from any app such as tasker.
+
+Windows (WSL)
+-------------
+
+Using WSL (Windows subsystem for Linux) it's possible to run tpws in socks mode under rather new builds of
+windows 10 and windows server.
+Its not required to install any linux distributions as suggested in most articles.
+tpws is static binary. It doesn't need a distribution.
+
+Install WSL : dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all
+Copy binaries/x86_64/tpws_wsl.tgz to the target system.
+Run : wsl --import tpws "%USERPROFILE%\tpws" tpws_wsl.tgz
+Run tpws : wsl --exec /tpws --uid=1 --no-resolve --socks --bind-addr=127.0.0.1 --port=1080 <fooling_options>
+Configure socks as 127.0.0.1:1080 in a browser or another program.
+
+Cleanup : wsl --unregister tpws
+
+Tested in windows 10 build 19041 (20.04).
+
+NOTICE. There is native windows solution GoodByeDPI. It works on packet level like nfqws.
+
+Other devices
+-------------
+
+Author's goal does not include easy supporting as much devices as possibles.
+Please do not ask for easy supporting firmwares. It requires a lot of work and owning lots of devices. Its counterproductive.
+As a devices owner its easier for you and should not be too hard if firmware is open.
+Most closed stock firmwares are not designed for custom usage and sometimes actively prevent it.
+In the latter case you have to hack into it and reverse engineer. Its not easy.
+Binaries are universal. They can run on almost all firmwares.
+You will need :
+ * root shell access. true sh shell, not microtik-like console
+ * startup hook
+ * r/w partition to store binaries and startup script with executable permission (+x)
+ * tpws can be run almost anywhere but nfqws require kernel support for NFQUEUE. Its missing in most firmwares.
+ * too old 2.6 kernels are unsupported and can cause errors
+If binaries crash with segfault (rare but happens on some kernels) try to unpack upx like this : upx -d tpws.
+First manually debug your scenario. Run iptables + daemon and check if its what you want.
+Write your own script with iptables magic and run required daemon from there. Put it to startup.
+Dont ask me how to do it. Its different for all firmwares and requires studying.
+Find manual or reverse engineer yourself.
+Check for race conditions. Firmware can clear or modify iptables after your startup script.
+If this is the case then run another script in background and add some delay there.
 
 
 Https blocking bypass
