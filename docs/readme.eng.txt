@@ -355,32 +355,52 @@ Choosing parameters
 
 The file /opt/zapret/config is used by various components of the system and contains basic settings.
 It needs to be viewed and edited if necessary.
-Select MODE:
 
-nfqws_all_desync - use nfqws for DPI desync attack on all http and https
-nfqws_ipset_desync - use nfqws for DPI desync attack on http and https , targets filtered by ipset "zapret"
-nfqws_hostlist_desync - use nfqws for DPI desync attack on http and https , only to hostnames from hostlist
 
-tpws_ipset - use tpws on http, targets are filtered by ipset "zapret"
-tpws_ipset_https - use tpws on http and https, targets are filtered by ipset "zapret"
-tpws_all - use tpws on all http
-tpws_all_https - use tpws on all http and https
-tpws_hostlist - same as tpws_all but touch only domains from the hostlist
-tpws_hostlist_https - same as tpws_all_https but touch only domains from the hostlist
+Main mode :
+tpws - use tpws
+tpws - use nfqws
+filter - only fill ipset or load hostlist
+custom - use custom script for running daemons and establishing firewall rules
 
-ipset - only fill ipset. futher actions depend on your own code
-custom - use custom script to run daemons and fill firewall rules. see example in init.d
+MODE=tpws
 
-Its possible to change manipulation options used by tpws separately for http and https :
+Enable http fooling :
 
-TPWS_OPT_HTTP="--hostspell=HOST --split-http-req=method"
-TPWS_OPT_HTTPS="--split-pos=3"
+MODE_HTTP=1
+
+Apply fooling to keep alive http sessions. Only applicable to nfqws. Tpws always fool keepalives.
+Not enabling this can save CPU time.
+
+MODE_HTTP_KEEPALIVE=0
+
+Enable https fooling :
+
+MODE_HTTPS=1
+
+Host filtering mode :
+none - apply fooling to all hosts
+ipset - limit fooling to hosts from ipset zapret/zapret6
+hostlist - limit fooling to hosts from hostlist
+
+MODE_FILTER=none
+
+Its possible to change manipulation options used by tpws :
+
+TPWS_OPT="--hostspell=HOST --split-http-req=method --split-pos=3"
 
 nfqws options for DPI desync attack:
 
 DESYNC_MARK=0x40000000
 NFQWS_OPT_DESYNC="--dpi-desync=fake --dpi-desync-ttl=0 --dpi-desync-fooling=badsum --dpi-desync-fwmark=$DESYNC_MARK"
 
+flow offloading control (openwrt only)
+donttouch : disable system flow offloading setting if selected mode is incompatible with it, dont touch it otherwise and dont configure selective flow offloading
+none : always disable system flow offloading setting and dont configure selective flow offloading
+software : always disable system flow offloading setting and configure selective software flow offloading
+hardware : always disable system flow offloading setting and configure selective hardware flow offloading
+
+FLOWOFFLOAD=donttouch
 
 The GETLIST parameter tells the install_easy.sh installer which script to call
 to update the list of blocked ip or hosts.
